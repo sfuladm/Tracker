@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apple Health Fitness & Cutting Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        appleDark: '#000000',
+                        appleCard: '#1c1c1e',
+                        appleCardHover: '#2c2c2e',
+                        appleBlue: '#0a84ff',
+                        appleOrange: '#ff9f0a',
+                        appleGreen: '#30d158',
+                        appleRed: '#ff453a',
+                        applePurple: '#af52de',
+                        appleGray: '#8e8e93',
+                    }
+                }
+            }
+        }
+    </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            background-color: #000000;
+            color: #f5f5f7;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-black text-white min-h-screen flex justify-center items-center">
+
+    <div id="root" class="w-full max-w-md h-[100vh] sm:h-[880px] sm:rounded-[40px] sm:border-[8px] sm:border-[#333] overflow-hidden flex flex-col bg-appleDark relative shadow-2xl"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const defaultWeeklySchedule = {
+            'Monday': { label: 'Monday', focus: 'Chest & back, abs', type: 'strength', duration: '45 mins', burn: 380, exercises: ['Bench Press - 3 sets x 10 reps', 'Lat Pulldown - 3 sets x 12 reps', 'Push-ups - 3 sets x 15 reps', 'Crunches - 3 sets x 20 reps'] },
+            'Tuesday': { label: 'Tuesday', focus: 'Treadmill 1hr', type: 'cardio', duration: '60 mins', burn: 550, exercises: ['Treadmill Incline Walk / Jog - 60 mins', 'Cool down stretch - 10 mins'] },
+            'Wednesday': { label: 'Wednesday', focus: 'Shoulder, bicep, tricep', type: 'strength', duration: '45 mins', burn: 350, exercises: ['Shoulder Press - 3 sets x 10 reps', 'Bicep Curls - 3 sets x 12 reps', 'Tricep Pushdowns - 3 sets x 12 reps'] },
+            'Thursday': { label: 'Thursday', focus: 'Treadmill 1hr', type: 'cardio', duration: '60 mins', burn: 550, exercises: ['Treadmill Steady State Run - 60 mins', 'Core Planks - 3 sets x 1 min'] },
+            'Friday': { label: 'Friday', focus: 'Leg day & abs', type: 'strength', duration: '50 mins', burn: 450, exercises: ['Goblet Squats - 4 sets x 10 reps', 'Lunges - 3 sets x 12 reps', 'Leg Raises - 3 sets x 15 reps'] },
+            'Saturday': { label: 'Saturday', focus: 'Rest & Recovery', type: 'rest', duration: '0 mins', burn: 80, exercises: ['Light walking & stretching', 'Hydration focus'] },
+            'Sunday': { label: 'Sunday', focus: 'Rest & Recovery', type: 'rest', duration: '0 mins', burn: 80, exercises: ['Full body mobility', 'Meal prep for upcoming week'] },
+        };
+
+        function App() {
+            const [currentTab, setCurrentTab] = useState('routine'); 
+            const [selectedDate, setSelectedDate] = useState('2026-09-22');
+            const [dailyLogs, setDailyLogs] = useState({});
+            
+            const [modalConfig, setModalConfig] = useState({ isOpen: false, type: '', title: '' });
+            const [dailyWeightPromptOpen, setDailyWeightPromptOpen] = useState(false);
+            const [promptWeightInput, setPromptWeightInput] = useState('');
+            const [toast, setToast] = useState('');
+
+            // Refs map to scroll selected date pill into view
+            const dateRefs = useRef({});
+
+            useEffect(() => {
+                const savedLogs = localStorage.getItem('apple_health_fitness_logs_v7');
+                
+                let parsedLogs = {};
+                if (savedLogs) {
+                    try { parsedLogs = JSON.parse(savedLogs); } catch (e) {}
+                }
+                setDailyLogs(parsedLogs);
+
+                const todayKey = '2026-09-22';
+                const lastPromptDate = localStorage.getItem('last_weight_prompt_date_v7');
+                if (lastPromptDate !== todayKey) {
+                    const todayExisting = parsedLogs[todayKey]?.weight || '';
+                    setPromptWeightInput(todayExisting);
+                    setDailyWeightPromptOpen(true);
+                }
+
+                // Scroll to default today's date pill on load
+                scrollToDate(todayKey);
+            }, []);
+
+            const scrollToDate = (dateStr) => {
+                setTimeout(() => {
+                    if (dateRefs.current[dateStr]) {
+                        dateRefs.current[dateStr].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }
+                }, 50);
+            };
+
+            const handleDateSelect = (dateStr) => {
+                setSelectedDate(dateStr);
+                setCurrentTab('routine');
+                scrollToDate(dateStr);
+            };
+
+            const saveLogsToStorage = (updatedLogs) => {
+                setDailyLogs(updatedLogs);
+                localStorage.setItem('apple_health_fitness_logs_v7', JSON.stringify(updatedLogs));
+            };
+
+            const showToast = (msg) => {
+                setToast(msg);
+                setTimeout(() => setToast(''), 3000);
+            };
+
+            const handleDailyWeightSubmit = () => {
+                const todayKey = '2026-09-22';
+                const weightVal = Number(promptWeightInput) || 0;
+                const updated = { ...dailyLogs };
+                if (!updated[todayKey]) {
+                    updated[todayKey] = { workoutDone: false, calorieIntake: 0, water: 0, weight: weightVal };
+                } else {
+                    updated[todayKey].weight = weightVal;
+                }
+
+                saveLogsToStorage(updated);
+                localStorage.setItem('last_weight_prompt_date_v7', todayKey);
+                setDailyWeightPromptOpen(false);
+                showToast(weightVal > 0 ? `Today's weight (${weightVal} kg) recorded!` : `Weight prompt skipped.`);
+            };
+
+            const monthDays = Array.from({ length: 30 }, (_, i) => {
+                const dayNum = i + 1;
+                const dateStr = `2026-09-${dayNum < 10 ? '0' + dayNum : dayNum}`;
+                const dateObj = new Date(2026, 8, dayNum);
+                const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+                return {
+                    dateStr,
+                    dayNum,
+                    dayName: dayNames[dateObj.getDay()],
+                    isToday: dayNum === 22
+                };
+            });
+
+            const getDayOfWeekName = (dateStr) => {
+                const d = new Date(dateStr);
+                const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                return names[d.getDay()];
+            };
+
+            const currentDayName = getDayOfWeekName(selectedDate);
+            const currentDayRoutine = defaultWeeklySchedule[currentDayName] || defaultWeeklySchedule['Monday'];
+            const currentDayLog = dailyLogs[selectedDate] || { workoutDone: false, calorieIntake: 0, water: 0, weight: 0 };
+
+            // Automatic Start Weight Detection: Find the earliest date with a valid weight entry
+            const sortedLogDates = Object.keys(dailyLogs).sort();
+            let startWeight = 0;
+            for (let dKey of sortedLogDates) {
+                if (dailyLogs[dKey]?.weight && dailyLogs[dKey].weight > 0) {
+                    startWeight = dailyLogs[dKey].weight;
+                    break;
+                }
+            }
+            if (startWeight === 0) {
+                startWeight = currentDayLog.weight > 0 ? currentDayLog.weight : 75.0; // fallback default
+            }
+
+            // Calculations
+            const activeCaloriesBurned = currentDayLog.workoutDone ? currentDayRoutine.burn : 0;
+            const calorieIntake = currentDayLog.calorieIntake || 0;
+            const netCalories = calorieIntake - activeCaloriesBurned;
+
+            const currentWeight = currentDayLog.weight || startWeight;
+            const weightLost = Number((startWeight - currentWeight).toFixed(1));
+
+            const toggleWorkoutStatus = () => {
+                const updated = { ...dailyLogs };
+                if (!updated[selectedDate]) updated[selectedDate] = { ...currentDayLog };
+                updated[selectedDate].workoutDone = !updated[selectedDate].workoutDone;
+                saveLogsToStorage(updated);
+                showToast(updated[selectedDate].workoutDone ? `Workout completed! +${currentDayRoutine.burn} kcal burned 🔥` : 'Workout status reset.');
+            };
+
+            const handleSaveModalData = (field, value) => {
+                const updated = { ...dailyLogs };
+                if (!updated[selectedDate]) updated[selectedDate] = { ...currentDayLog };
+                updated[selectedDate][field] = value;
+                saveLogsToStorage(updated);
+                showToast(`Successfully updated ${field}!`);
+                setModalConfig({ isOpen: false, type: '', title: '' });
+            };
+
+            const formatDisplayDate = (dateStr) => {
+                if (dateStr === '2026-09-22') return 'Today, 22 September';
+                const parts = dateStr.split('-');
+                const day = parseInt(parts[2], 10);
+                return `${day} September 2026`;
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-appleDark text-white select-none relative w-full">
+                    {/* Daily Weight Prompt Modal */}
+                    {dailyWeightPromptOpen && (
+                        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-6">
+                            <div className="bg-[#1c1c1e] w-full max-w-xs rounded-3xl p-6 border border-white/20 shadow-2xl flex flex-col gap-4 text-center">
+                                <div className="w-12 h-12 bg-appleGreen/20 text-appleGreen rounded-full flex items-center justify-center mx-auto text-2xl">
+                                    ⚖️
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">Daily Weight Check-in</h3>
+                                    <p className="text-xs text-appleGray mt-1">Enter your body weight today to track cutting progress:</p>
+                                </div>
+                                <div className="flex items-center justify-center gap-2 my-1">
+                                    <input 
+                                        type="number" 
+                                        step="0.1" 
+                                        placeholder="0.0"
+                                        value={promptWeightInput} 
+                                        onChange={(e) => setPromptWeightInput(e.target.value)} 
+                                        className="w-32 bg-appleCardHover border border-white/20 rounded-2xl px-4 py-3 text-center text-white text-xl font-bold focus:outline-none focus:border-appleGreen"
+                                    />
+                                    <span className="text-appleGray font-semibold">kg</span>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <button 
+                                        onClick={handleDailyWeightSubmit}
+                                        className="bg-appleGreen text-black font-bold py-3 rounded-2xl hover:opacity-95 transition-all shadow-lg"
+                                    >
+                                        Save & Start Day
+                                    </button>
+                                    <button 
+                                        onClick={() => setDailyWeightPromptOpen(false)}
+                                        className="text-appleGray text-xs hover:text-white py-1"
+                                    >
+                                        Skip for now
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Toast Notification */}
+                    {toast && (
+                        <div className="absolute top-14 left-1/2 transform -translate-x-1/2 z-50 bg-[#2c2c2e]/95 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full shadow-lg border border-white/10 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-appleGreen"></span>
+                            {toast}
+                        </div>
+                    )}
+
+                    {/* Top Navigation / Header */}
+                    <div className="pt-12 px-4 pb-3 flex items-center justify-between border-b border-white/10 bg-appleDark/90 backdrop-blur-xl sticky top-0 z-40">
+                        <button onClick={() => handleDateSelect('2026-09-22')} className="w-9 h-9 rounded-full bg-appleCardHover flex items-center justify-center text-appleBlue hover:bg-white/20 transition-all" title="Jump to Today">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </button>
+                        <h1 className="text-lg font-semibold tracking-tight">
+                            {currentTab === 'routine' && 'Fitness & Cutting Log'}
+                            {currentTab === 'month' && 'September 2026 Calendar'}
+                            {currentTab === 'summary' && 'Cutting & Calories'}
+                            {currentTab === 'browse' && 'Browse Categories'}
+                        </h1>
+                        <button onClick={() => setCurrentTab('month')} className="w-9 h-9 rounded-full bg-appleCardHover flex items-center justify-center text-appleBlue hover:bg-white/20 transition-all" title="Full Month View">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        </button>
+                    </div>
+
+                    {/* Main Scrollable Body */}
+                    <div className="flex-1 overflow-y-auto no-scrollbar pb-28">
+
+                        {/* TAB 1: ROUTINE & DAILY LOG */}
+                        {currentTab === 'routine' && (
+                            <div className="px-4 py-3 flex flex-col gap-6">
+                                <div className="text-center">
+                                    <h2 className="text-xl font-bold tracking-tight text-white">
+                                        {formatDisplayDate(selectedDate)}
+                                    </h2>
+                                    <p className="text-xs text-appleGray mt-0.5">{currentDayName} • {currentDayRoutine.focus}</p>
+                                </div>
+
+                                {/* Capsule Horizontal Date Bar (Defaults scrolled to selected date) */}
+                                <div className="relative">
+                                    <div className="flex justify-center mb-1">
+                                        <div className="w-3 h-3 bg-white rotate-45 transform translate-y-1"></div>
+                                    </div>
+                                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2 px-1">
+                                        {monthDays.map((d) => {
+                                            const isSelected = selectedDate === d.dateStr;
+                                            return (
+                                                <div key={d.dateStr} ref={el => dateRefs.current[d.dateStr] = el}>
+                                                    <button 
+                                                        onClick={() => handleDateSelect(d.dateStr)}
+                                                        className={`flex flex-col items-center justify-center min-w-[46px] h-[72px] rounded-full transition-all shrink-0 ${
+                                                            d.isToday 
+                                                                ? 'bg-white text-black font-bold shadow-lg scale-105' 
+                                                                : isSelected 
+                                                                    ? 'bg-appleCardHover text-white border border-appleBlue' 
+                                                                    : 'bg-appleCard text-appleGray hover:text-white'
+                                                        }`}
+                                                    >
+                                                        <span className="text-[11px] uppercase">{d.dayName}</span>
+                                                        <span className="text-base font-semibold mt-1">{d.dayNum}</span>
+                                                        {d.isToday && <span className="w-1.5 h-1.5 bg-appleOrange rounded-full mt-1"></span>}
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Routine Advice Banner */}
+                                <div className="bg-gradient-to-r from-appleBlue/20 to-applePurple/20 border border-appleBlue/30 rounded-2xl p-4">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-semibold uppercase tracking-wider text-appleBlue">Beginner Cutting Routine</span>
+                                        <span className="text-xs bg-appleGreen/20 text-appleGreen px-2 py-0.5 rounded-full font-bold">Est. Burn: ~{currentDayRoutine.burn} kcal</span>
+                                    </div>
+                                    <h3 className="text-sm font-bold mt-1 text-white">{currentDayRoutine.focus}</h3>
+                                    <div className="mt-2.5 pt-2 border-t border-white/10 flex flex-col gap-1">
+                                        {currentDayRoutine.exercises.map((ex, idx) => (
+                                            <div key={idx} className="flex items-center gap-2 text-xs text-appleGray">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-appleBlue"></span>
+                                                {ex}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Log Section Header */}
+                                <div className="flex items-center justify-between mt-2">
+                                    <h3 className="text-2xl font-bold tracking-tight">Fitness Log</h3>
+                                    <button onClick={() => setCurrentTab('month')} className="text-appleBlue text-sm font-medium">Month View</button>
+                                </div>
+
+                                {/* Workout Completed Card */}
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-2 text-appleOrange text-xs font-semibold uppercase tracking-wider">
+                                        <span className="w-2 h-2 rounded-full bg-appleOrange"></span>
+                                        Daily Workout Status (Triggers Active Burn)
+                                    </div>
+                                    <div 
+                                        onClick={toggleWorkoutStatus}
+                                        className={`rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all shadow-md border ${
+                                            currentDayLog.workoutDone ? 'bg-[#1b3320] border-appleGreen/40' : 'bg-appleCard border-white/10 hover:bg-appleCardHover'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-sm font-medium">{currentDayRoutine.focus}</span>
+                                            {currentDayLog.workoutDone && <span className="text-xs bg-appleGreen/30 text-appleGreen px-2 py-0.5 rounded-full font-bold">Completed (+{currentDayRoutine.burn} kcal) ✓</span>}
+                                        </div>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-lg ${currentDayLog.workoutDone ? 'bg-appleGreen text-black' : 'bg-white/10 text-appleBlue'}`}>
+                                            {currentDayLog.workoutDone ? '✓' : '+'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* CLEAR & SIMPLE: Calories & Nutrition Dashboard */}
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-appleBlue text-xs font-semibold uppercase tracking-wider">
+                                            <span className="w-2 h-2 rounded-full bg-appleBlue"></span>
+                                            Calories & Nutrition Summary
+                                        </div>
+                                    </div>
+
+                                    {/* Summary Card */}
+                                    <div className="bg-gradient-to-br from-appleCard to-[#2c2c2e] rounded-2xl p-4 border border-white/10 flex flex-col gap-3">
+                                        <div className="grid grid-cols-2 gap-3 text-center">
+                                            <div className="bg-black/30 p-3 rounded-xl border border-white/5">
+                                                <span className="text-[10px] text-appleGray">Food Intake</span>
+                                                <p className="text-lg font-bold text-appleOrange mt-0.5">{calorieIntake} <span className="text-xs font-normal">kcal</span></p>
+                                            </div>
+                                            <div className="bg-black/30 p-3 rounded-xl border border-white/5">
+                                                <span className="text-[10px] text-appleGray">Workout Burn</span>
+                                                <p className="text-lg font-bold text-appleGreen mt-0.5">-{activeCaloriesBurned} <span className="text-xs font-normal">kcal</span></p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-appleBlue/10 p-3 rounded-xl border border-appleBlue/30 flex items-center justify-between">
+                                            <div>
+                                                <span className="text-xs font-bold text-appleBlue">Net Calories (Intake - Burn)</span>
+                                                <p className="text-[10px] text-appleGray">Remaining net energy balance</p>
+                                            </div>
+                                            <span className="text-xl font-bold text-appleBlue">{netCalories} kcal</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Edit Rows */}
+                                    <div className="bg-appleCard rounded-2xl overflow-hidden divide-y divide-white/5 border border-white/5">
+                                        <div 
+                                            onClick={() => setModalConfig({ isOpen: true, type: 'calorieIntake', title: 'Calorie Intake (kcal)' })}
+                                            className="p-4 flex items-center justify-between hover:bg-appleCardHover cursor-pointer transition-all"
+                                        >
+                                            <span className="text-sm font-medium">Log Food Calorie Intake</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-appleOrange font-bold">{calorieIntake} kcal</span>
+                                                <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-appleBlue font-bold">+</span>
+                                            </div>
+                                        </div>
+
+                                        <div 
+                                            onClick={() => setModalConfig({ isOpen: true, type: 'water', title: 'Water Intake (Liters)' })}
+                                            className="p-4 flex items-center justify-between hover:bg-appleCardHover cursor-pointer transition-all"
+                                        >
+                                            <span className="text-sm font-medium">Water Intake</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-appleBlue font-bold">{currentDayLog.water || 0} L</span>
+                                                <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-appleBlue font-bold">+</span>
+                                            </div>
+                                        </div>
+
+                                        <div 
+                                            onClick={() => setModalConfig({ isOpen: true, type: 'weight', title: 'Body Weight (kg)' })}
+                                            className="p-4 flex items-center justify-between hover:bg-appleCardHover cursor-pointer transition-all"
+                                        >
+                                            <span className="text-sm font-medium">Body Weight Today</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-applePurple font-bold">{currentWeight} kg</span>
+                                                <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-appleBlue font-bold">+</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 2: FULL 1-MONTH CALENDAR GRID */}
+                        {currentTab === 'month' && (
+                            <div className="px-4 py-3 flex flex-col gap-4">
+                                <div className="bg-appleCard rounded-2xl p-4 border border-white/5">
+                                    <h3 className="text-base font-bold mb-1">September 2026 Calendar</h3>
+                                    <p className="text-xs text-appleGray">Tap any date to check workouts or review logs.</p>
+                                </div>
+
+                                <div className="grid grid-cols-7 gap-2">
+                                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => (
+                                        <div key={i} className="text-center text-xs font-bold text-appleGray py-1">{d}</div>
+                                    ))}
+                                    {monthDays.map((d) => {
+                                        const isSelected = selectedDate === d.dateStr;
+                                        const dayLog = dailyLogs[d.dateStr];
+                                        const isCompleted = dayLog && dayLog.workoutDone;
+                                        return (
+                                            <button
+                                                key={d.dateStr}
+                                                onClick={() => handleDateSelect(d.dateStr)}
+                                                className={`h-16 rounded-2xl flex flex-col items-center justify-center p-1 border transition-all ${
+                                                    isSelected 
+                                                        ? 'border-appleBlue bg-appleCardHover shadow-md' 
+                                                        : d.isToday 
+                                                            ? 'border-appleOrange bg-appleCard' 
+                                                            : 'border-white/5 bg-appleCard hover:border-white/20'
+                                                }`}
+                                            >
+                                                <span className={`text-xs font-bold ${d.isToday ? 'text-appleOrange' : 'text-white'}`}>{d.dayNum}</span>
+                                                {isCompleted ? (
+                                                    <span className="mt-1 w-2 h-2 rounded-full bg-appleGreen"></span>
+                                                ) : (
+                                                    <span className="mt-1 w-2 h-2 rounded-full bg-white/10"></span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 3: SUMMARY & CUTTING WEIGHT LOSS */}
+                        {currentTab === 'summary' && (
+                            <div className="px-4 py-3 flex flex-col gap-4">
+                                {/* Cutting Weight Goals Card */}
+                                <div className="bg-appleCard rounded-2xl p-4 border border-white/5 flex flex-col gap-3">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-bold text-appleOrange">Cutting Weight Progress</h3>
+                                        <span className="text-[10px] text-appleGray">Auto-detected from history</span>
+                                    </div>
+
+                                    {/* Weight Lost Banner */}
+                                    <div className="bg-appleGreen/10 border border-appleGreen/30 rounded-xl p-3 flex items-center justify-between">
+                                        <div>
+                                            <span className="text-xs font-bold text-appleGreen">Total Weight Lost</span>
+                                            <p className="text-[10px] text-appleGray">First logged weight ({startWeight} kg) minus Today ({currentWeight} kg)</p>
+                                        </div>
+                                        <span className="text-xl font-bold text-appleGreen">
+                                            {weightLost > 0 ? `-${weightLost} kg` : `${weightLost} kg`}
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3 text-center pt-1">
+                                        <div className="bg-appleCardHover p-3 rounded-xl">
+                                            <span className="text-[10px] text-appleGray">Start Weight (Earliest Log)</span>
+                                            <p className="text-lg font-bold text-white mt-0.5">{startWeight} <span className="text-xs font-normal">kg</span></p>
+                                        </div>
+                                        <div className="bg-appleCardHover p-3 rounded-xl">
+                                            <span className="text-[10px] text-appleGray">Current Weight</span>
+                                            <p className="text-lg font-bold text-applePurple mt-0.5">{currentWeight} <span className="text-xs font-normal">kg</span></p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Calorie Calculation Dashboard */}
+                                <div className="bg-appleCard rounded-2xl p-4 border border-white/5 flex flex-col gap-3">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-bold text-appleBlue">Calorie Balance (Today)</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-appleCardHover p-3 rounded-xl flex flex-col justify-between">
+                                            <span className="text-xs text-appleGray">Food Intake</span>
+                                            <p className="text-xl font-bold text-appleOrange mt-1">{calorieIntake} <span className="text-xs font-normal">kcal</span></p>
+                                        </div>
+                                        <div className="bg-appleCardHover p-3 rounded-xl flex flex-col justify-between">
+                                            <span className="text-xs text-appleGray">Workout Burn</span>
+                                            <p className="text-xl font-bold text-appleGreen mt-1">-{activeCaloriesBurned} <span className="text-xs font-normal">kcal</span></p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-1 bg-appleCardHover/60 p-3 rounded-xl flex items-center justify-between border border-white/5">
+                                        <span className="text-xs text-appleGray font-medium">Net Calories (Intake - Burn):</span>
+                                        <span className="font-bold text-appleBlue text-base">
+                                            {netCalories} kcal
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TAB 4: BROWSE */}
+                        {currentTab === 'browse' && (
+                            <div className="px-4 py-3 flex flex-col gap-4">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div onClick={() => setCurrentTab('routine')} className="bg-appleCard hover:bg-appleCardHover p-4 rounded-2xl border border-white/5 cursor-pointer flex flex-col gap-2 transition-all">
+                                        <span className="text-2xl">🏋️‍♂️</span>
+                                        <h4 className="text-sm font-bold text-appleOrange">Cutting Routine</h4>
+                                        <p className="text-[11px] text-appleGray">Daily workouts & gym schedule</p>
+                                    </div>
+                                    <div onClick={() => setCurrentTab('summary')} className="bg-appleCard hover:bg-appleCardHover p-4 rounded-2xl border border-white/5 cursor-pointer flex flex-col gap-2 transition-all">
+                                        <span className="text-2xl">🥗</span>
+                                        <h4 className="text-sm font-bold text-appleBlue">Calorie Calculator</h4>
+                                        <p className="text-[11px] text-appleGray">Intake minus workout burn</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Interactive Modal Popup */}
+                    {modalConfig.isOpen && (
+                        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+                            <div className="bg-[#1c1c1e] w-full max-w-sm rounded-t-[32px] sm:rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col gap-4">
+                                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                                    <h3 className="text-base font-bold text-white">{modalConfig.title}</h3>
+                                    <button onClick={() => setModalConfig({ isOpen: false, type: '', title: '' })} className="text-appleGray hover:text-white text-sm font-medium">Cancel</button>
+                                </div>
+
+                                {modalConfig.type === 'calorieIntake' && (
+                                    <div className="flex flex-col gap-3 py-2">
+                                        <p className="text-xs text-appleGray">Enter total calorie intake today (kcal):</p>
+                                        <input 
+                                            type="number" 
+                                            defaultValue={calorieIntake} 
+                                            id="modal-cals-intake" 
+                                            className="w-full bg-appleCardHover border border-white/10 rounded-xl px-4 py-3 text-white text-base focus:outline-none focus:border-appleBlue"
+                                        />
+                                        <button 
+                                            onClick={() => {
+                                                const el = document.getElementById('modal-cals-intake');
+                                                if (el) handleSaveModalData('calorieIntake', Number(el.value));
+                                            }} 
+                                            className="bg-appleOrange text-white font-semibold py-3 rounded-xl hover:opacity-95 transition-all mt-2"
+                                        >
+                                            Save Calorie Intake
+                                        </button>
+                                    </div>
+                                )}
+
+                                {modalConfig.type === 'water' && (
+                                    <div className="flex flex-col gap-3 py-2">
+                                        <p className="text-xs text-appleGray">Enter water intake (Liters):</p>
+                                        <input 
+                                            type="number" 
+                                            step="0.1" 
+                                            defaultValue={currentDayLog.water || 0} 
+                                            id="modal-water-input" 
+                                            className="w-full bg-appleCardHover border border-white/10 rounded-xl px-4 py-3 text-white text-base focus:outline-none focus:border-appleBlue"
+                                        />
+                                        <button 
+                                            onClick={() => {
+                                                const el = document.getElementById('modal-water-input');
+                                                if (el) handleSaveModalData('water', Number(el.value));
+                                            }} 
+                                            className="bg-appleBlue text-white font-semibold py-3 rounded-xl hover:opacity-95 transition-all mt-2"
+                                        >
+                                            Save Water Intake
+                                        </button>
+                                    </div>
+                                )}
+
+                                {modalConfig.type === 'weight' && (
+                                    <div className="flex flex-col gap-3 py-2">
+                                        <p className="text-xs text-appleGray">Enter current body weight (kg):</p>
+                                        <input 
+                                            type="number" 
+                                            step="0.1" 
+                                            defaultValue={currentWeight} 
+                                            id="modal-weight-input" 
+                                            className="w-full bg-appleCardHover border border-white/10 rounded-xl px-4 py-3 text-white text-base focus:outline-none focus:border-appleBlue"
+                                        />
+                                        <button 
+                                            onClick={() => {
+                                                const el = document.getElementById('modal-weight-input');
+                                                if (el) handleSaveModalData('weight', Number(el.value));
+                                            }} 
+                                            className="bg-applePurple text-white font-bold py-3 rounded-xl hover:opacity-95 transition-all mt-2"
+                                        >
+                                            Save Weight
+                                        </button>
+                                    </div>
+                                )}
+
+                                {modalConfig.type === 'goals' && (
+                                    <div className="flex flex-col gap-3 py-2">
+                                        <p className="text-xs text-appleGray">Start weight is now automatically tracked from your earliest logged date!</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Apple Health Bottom Navigation Bar */}
+                    <div className="absolute bottom-0 left-0 right-0 h-20 bg-appleDark/90 backdrop-blur-2xl border-t border-white/10 flex items-center justify-around px-2 z-40">
+                        <button 
+                            onClick={() => setCurrentTab('summary')}
+                            className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'summary' ? 'text-appleBlue scale-105' : 'text-appleGray hover:text-white'}`}
+                        >
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+                            <span className="text-[10px] font-medium tracking-tight">Summary</span>
+                        </button>
+
+                        <button 
+                            onClick={() => setCurrentTab('routine')}
+                            className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'routine' ? 'text-appleBlue scale-105' : 'text-appleGray hover:text-white'}`}
+                        >
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 6.29 3.43 4.86 2 3.43 3.43 4.86 4.86 2 6.29l1.43 1.43L2 9.14 3.43 10.57 4.86 9.14 13.43 17.71 9.86 21.29 11.29 22.72l1.43-1.43 1.43 1.43 1.43-1.43 1.43 1.43 1.43-1.43-3.57-3.57 5.72-5.72z"/></svg>
+                            <span className="text-[10px] font-medium tracking-tight">Routine</span>
+                        </button>
+
+                        <button 
+                            onClick={() => setCurrentTab('month')}
+                            className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'month' ? 'text-appleBlue scale-105' : 'text-appleGray hover:text-white'}`}
+                        >
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg>
+                            <span className="text-[10px] font-medium tracking-tight">1-Month</span>
+                        </button>
+
+                        <button 
+                            onClick={() => setCurrentTab('browse')}
+                            className={`flex flex-col items-center gap-1 transition-all ${currentTab === 'browse' ? 'text-appleBlue scale-105' : 'text-appleGray hover:text-white'}`}
+                        >
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4H4v4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+                            <span className="text-[10px] font-medium tracking-tight">Browse</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
